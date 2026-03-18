@@ -62,7 +62,7 @@ def filter_targets(targets):
     for t in targets:
         last_status = t.get("last_scan_session_status")
 
-        if last_status in [None, "failed"]:
+        if last_status in [None]:
             result.append(t)
 
     return result
