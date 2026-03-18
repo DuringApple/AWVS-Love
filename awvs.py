@@ -132,7 +132,7 @@ def main(api_url, headers,MAX_RUNNING=5, MAX_SAFE=10, SLEEP_TIME=60):
 if __name__ == "__main__":
     print(logo)
     parser = argparse.ArgumentParser()
-    parser.add_argument('-t', '--time', type=int, default=60, help="检测间隔（秒 默认60")
+    parser.add_argument('-t', '--time', type=int, default=60, help="检测间隔（默认60秒）")
     parser.add_argument('--target',help="AWVS主机地址")
     parser.add_argument('-p', '--port', type=int, default=3443, help="AWVS端口（默认3443）")
     parser.add_argument('-k', '--key', help="AWVS API Key")
