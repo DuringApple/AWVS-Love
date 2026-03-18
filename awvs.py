@@ -94,7 +94,6 @@ def start_scan(target_id, BASE_URL, HEADERS):
 # ================== 主调度 ==================
 
 def main(api_url, headers,MAX_RUNNING=5, MAX_SAFE=10, SLEEP_TIME=60):
-   # logging.info("=== AWVS自动化调度v2.1 ===")
     print("============================== AWVS自动化任务调度v1.0 ==============================")
     while True:
         try:
