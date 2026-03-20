@@ -2,9 +2,10 @@ import requests
 import time
 import logging
 import argparse
+import threading
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
+import os,signal
 
-# 禁用SSL警告
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 logo = r"""
@@ -13,16 +14,16 @@ logo = r"""
 |  o  ||  |  |  ||  |  |(   \_ 
 |     ||  |  |  ||  |  | \__  |
 |  _  ||  `  '  ||  :  | /  \ |
-|C |C | \ L  O /  \ V /  \  E | v2.0 - 2025-03-19
+|C |C | \ L  O /  \ V /  \  E | v3.0 - 2025-03-20
 |__|__|  \_/\_/    \_/    \___| 若似月轮终皎洁，不辞冰雪为君热
 ------------------------------------------------------------
 Author: 小猫之神在哭泣 (https://github.com/DuringApple)
 
 一款基于AWVS API的自动化扫描任务调度工具，支持定时检测扫描状态并自动补充扫描任务，适用于大规模资产管理和持续安全监测。
+新增了高危漏洞监控功能，配合钉钉机器人实现实时通知。还增加了服务器内存监控模式，防止过度扫描导致系统资源耗尽。
 仅用于合法授权的环境，使用前请确保已获得相关权限。作者不对任何非法使用造成的后果负责。
 """
 
-# 配置日志
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -85,8 +86,8 @@ def get_all_scans(BASE_URL, HEADERS):
 def get_targets(BASE_URL, HEADERS):
 
     all_targets = []
-    cursor = None  # 分页游标
-    limit = 100    # 每页数量
+    cursor = None
+    limit = 100   
     page = 1
     
     while True:
@@ -190,12 +191,81 @@ def start_scan(target_id, BASE_URL, HEADERS, PROFILE_ID):
         logging.error(f"[!] 启动扫描异常: {target_id} -> {e}")
         return False
 
-# ================== 主调度 ==================
+def safe_mode_monitor(jc_time,occupancy):
+    import psutil,os,ctypes,signal
+    
+    while True:
+        mem = psutil.virtual_memory()
+        print(f"[*] 当前内存使用率: {mem.percent}%")
+        if mem.percent > occupancy:
+            logging.warning(f"内存使用率过高: {mem.percent}%，终止调度！")
+            pid = os.getppid()
+            if os.name == 'nt':
+                handle = ctypes.windll.kernel32.OpenProcess(1, False, pid)
+            if handle:
+                ctypes.windll.kernel32.TerminateProcess(handle, -1)
+                ctypes.windll.kernel32.CloseHandle(handle)
+            else:
+                os.kill(pid, signal.SIGKILL)
+                os.kill(os.getppid(), signal.SIGTERM) 
+        else:
+            time.sleep(jc_time)
+
+def dingding_robot(api, headers, access_token, jc_time):
+
+    while True:
+        response = requests.get(api, headers=headers, verify=False)
+        data = response.json()
+        current_num = data["pagination"]["count"]
+
+        print("当前漏洞总数:", current_num)
+
+        record_file = "vuln_count.txt"
+
+        if os.path.exists(record_file):
+            with open(record_file, "r") as f:
+                try:
+                    last_num = int(f.read().strip())
+                except:
+                    last_num = 0
+        else:
+            last_num = 0
+
+        print("上次漏洞总数:", last_num)
+
+        diff = current_num - last_num
+
+        if diff > 0:
+            print(f"新增漏洞: {diff}")
+
+            url = f"https://oapi.dingtalk.com/robot/send?access_token={access_token}"
+
+            data = {
+                "msgtype": "text",
+                "text": {
+                    "content": f"✨[+] 主人ちゃん～快看过来ヾ(≧∇≦)ﾉ！\n新发现了{diff}个高危漏洞哦💥，目前总共有{current_num}个啦～要赶紧处理掉才行哦🥺"
+                }
+            }
+
+            try:
+                res = requests.post(url, json=data)
+                logging.info(f"钉钉通知发送成功: {res.text}")
+            except Exception as e:
+                logging.error(f"钉钉通知发送失败: {e}")
+
+        else:
+            print("没有新增漏洞，不发送通知")
+
+        with open(record_file, "w") as f:
+            f.write(str(current_num))
+        time.sleep(jc_time)
+
+
 def main(api_url, headers, profile_id, MAX_RUNNING=5, MAX_SAFE=5, SLEEP_TIME=60):
     print("============================== AWVS自动化任务调度v2.0 ==============================")
     logging.info("AWVS自动化调度程序启动")
     logging.info(f"配置参数 - 最大并发扫描数: {MAX_RUNNING}, 安全上限: {MAX_SAFE}, 检测间隔: {SLEEP_TIME}秒")
-    
+
     while True:
         try:
 
@@ -249,19 +319,44 @@ if __name__ == "__main__":
     parser.add_argument('--size', type=int, default=5, help="扫描数量安全上限（超过则暂停），默认5")
     parser.add_argument('--profile-id', default="11111111-1111-1111-1111-111111111111", 
                         help="扫描配置文件ID，默认全扫描(11111111-1111-1111-1111-111111111111)")
+    parser.add_argument('--safe-mode', action='store_true', default=False, help="启用内存监控模式")
+    parser.add_argument('--dingtalk-robot', action='store_true',default=False,help="钉钉机器人启用后会在高危漏洞数量增加时发送通知")
     
     args = parser.parse_args()
     
     api_url = f"https://{args.target}:{args.port}/api/v1"
-    
+    loudong_api_url = f"https://{args.target}:{args.port}/api/v1/vulnerabilities?q=severity:3"
     MAX_RUNNING = args.threads          
     MAX_SAFE = args.size          
     SLEEP_TIME = args.time              
-    PROFILE_ID = args.profile_id        
+    PROFILE_ID = args.profile_id  
+    safe_mode = args.safe_mode
+    robot = args.dingtalk_robot      
     
     HEADERS = {
         "X-Auth": args.key,
         "Content-Type": "application/json"
     }
-    
-    main(api_url, HEADERS, PROFILE_ID, MAX_RUNNING, MAX_SAFE, SLEEP_TIME)
+
+
+    def robot_pd(robot):
+        if robot:
+            access_token = input("[*] 请输入钉钉机器人Access_Token: ")
+            print("\n+----------------------------------------------+")
+            print("| 钉钉机器人已启用 将在高危漏洞增加时发送通知 |")
+            print("+----------------------------------------------+\n")
+            dingding_thread = threading.Thread(target=dingding_robot, args=(loudong_api_url, HEADERS, access_token,SLEEP_TIME), daemon=True)
+            dingding_thread.start()
+
+    if safe_mode:
+        occupancy = int(input("[*] 请输入内存占用安全上限（百分比，默认80）: ") or 80)
+        robot_pd(robot)
+        monitor_thread = threading.Thread(target=safe_mode_monitor, args=(SLEEP_TIME, occupancy), daemon=True)
+        print("\n+-----------------------------------------+")
+        print("| 内存监控线程启动 正在监测内存占用...... |")
+        print("+-----------------------------------------+\n")
+        monitor_thread.start()
+        main(api_url, HEADERS, PROFILE_ID, MAX_RUNNING, MAX_SAFE, SLEEP_TIME)
+    else:
+        robot_pd(robot)
+        main(api_url, HEADERS, PROFILE_ID, MAX_RUNNING, MAX_SAFE, SLEEP_TIME)
