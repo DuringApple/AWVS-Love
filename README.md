@@ -13,6 +13,8 @@ v3.0版本接入了钉钉机器人，实现了高危漏洞变化实时推送。�
     钉钉机器人可在电脑版钉钉中添加，复制access_token并输入就可以正常使用了。
     由于AWVS14大部分情况下只有高危漏洞可能出成果，所以仅设计为通知高危漏洞变化，用户可以根据需求二次开发。
 
+v4.0版本细化了钉钉机器人推送流程，增加了具体漏洞类型的推送，增加了内存占用告警的机器人推送消息，优化了一些已知问题
+
 ```
 -h, --help            show this help message and exit
 -t TIME, --time TIME  检测间隔（秒），默认60秒
@@ -35,7 +37,7 @@ v3.0版本接入了钉钉机器人，实现了高危漏洞变化实时推送。�
 
 增加了钉钉机器人实时推送，为了增加安全性，钉钉token采用交互模式输入；
 
-<img width="2374" height="1159" alt="image" src="https://github.com/user-attachments/assets/8910f62a-2929-4d03-bab8-7a898e8c2930" />
+<img width="1236" height="1029" alt="image" src="https://github.com/user-attachments/assets/2813a1f7-91bd-40c3-9131-03a2e553ddcc" />
 
 仅用于合法授权的环境，使用前请确保已获得相关权限。作者不对任何非法使用造成的后果负责！
 
